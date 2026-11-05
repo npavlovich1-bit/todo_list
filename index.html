@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Список задач</title>
+<style>
+:root{
+  --bg:#eef1f4; --surface:#ffffff; --ink:#1f2933; --muted:#7b8794;
+  --line:#dde2e8; --accent:#2f6f5e; --accent-ink:#ffffff; --danger:#b4443a;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#14181c; --surface:#1d2329; --ink:#e6ebf0; --muted:#8793a0;
+    --line:#2d353d; --accent:#5fb89e; --accent-ink:#10201b; --danger:#e07a6f; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14181c; --surface:#1d2329; --ink:#e6ebf0; --muted:#8793a0;
+  --line:#2d353d; --accent:#5fb89e; --accent-ink:#10201b; --danger:#e07a6f; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.5 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  min-height:100vh;display:flex;justify-content:center;padding:48px 16px}
+main{width:100%;max-width:560px}
+h1{font-size:2rem;font-weight:700;letter-spacing:-.02em;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 24px}
+form{display:flex;gap:8px;margin-bottom:16px}
+input[type=text]{flex:1;min-width:0;padding:14px 16px;font:inherit;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:10px}
+input[type=text]::placeholder{color:var(--muted)}
+button{font:inherit;cursor:pointer}
+.add{padding:0 20px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-weight:600}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.filters{display:flex;gap:4px;margin-bottom:12px}
+.filters button{background:none;border:0;padding:6px 12px;border-radius:8px;color:var(--muted)}
+.filters button[aria-pressed=true]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 0 0 1px var(--line)}
+ul{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+li{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);flex:none;cursor:pointer}
+li span{flex:1;word-break:break-word}
+li.done span{color:var(--muted);text-decoration:line-through}
+.del{background:none;border:0;color:var(--muted);font-size:1.4rem;line-height:1;padding:4px 8px;border-radius:8px}
+.del:hover{color:var(--danger)}
+.empty{padding:28px 16px;text-align:center;color:var(--muted)}
+footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:.9rem}
+.clear{background:none;border:0;color:var(--muted);text-decoration:underline;padding:4px}
+.clear:hover{color:var(--danger)}
+@media (prefers-reduced-motion:no-preference){li{transition:background .15s}li:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Список задач</h1>
+  <p class="sub" id="sub"></p>
+
+  <form id="form">
+    <input type="text" id="input" placeholder="Что нужно сделать?" maxlength="200" autocomplete="off" aria-label="Новая задача">
+    <button class="add" type="submit">Добавить</button>
+  </form>
+
+  <div class="filters" role="group" aria-label="Фильтр">
+    <button type="button" data-f="all" aria-pressed="true">Все</button>
+    <button type="button" data-f="active" aria-pressed="false">Активные</button>
+    <button type="button" data-f="done" aria-pressed="false">Выполненные</button>
+  </div>
+
+  <ul id="list"></ul>
+
+  <footer>
+    <span id="count"></span>
+    <button class="clear" id="clear" type="button">Удалить выполненные</button>
+  </footer>
+</main>
+
+<script>
+const KEY = "todo.tasks.v1";
+let tasks = [];
+let filter = "all";
+
+try { tasks = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) { tasks = []; }
+if (!Array.isArray(tasks)) tasks = [];
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) {}
+}
+
+function plural(n, forms) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return forms[0];
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
+  return forms[2];
+}
+
+const list = document.getElementById("list");
+const input = document.getElementById("input");
+
+function render() {
+  const visible = tasks.filter(t =>
+    filter === "all" ? true : filter === "done" ? t.done : !t.done);
+
+  list.innerHTML = "";
+  if (!visible.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.style.justifyContent = "center";
+    li.textContent = tasks.length ? "В этом разделе задач нет." : "Задач пока нет. Добавьте первую выше.";
+    list.appendChild(li);
+  }
+
+  visible.forEach(t => {
+    const li = document.createElement("li");
+    if (t.done) li.className = "done";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = t.done;
+    cb.setAttribute("aria-label", "Отметить выполненной");
+    cb.addEventListener("change", () => { t.done = cb.checked; save(); render(); });
+
+    const span = document.createElement("span");
+    span.textContent = t.text;
+
+    const del = document.createElement("button");
+    del.className = "del";
+    del.type = "button";
+    del.innerHTML = "&times;";
+    del.setAttribute("aria-label", "Удалить задачу");
+    del.addEventListener("click", () => {
+      tasks = tasks.filter(x => x.id !== t.id);
+      save(); render();
+    });
+
+    li.append(cb, span, del);
+    list.appendChild(li);
+  });
+
+  const left = tasks.filter(t => !t.done).length;
+  const doneN = tasks.length - left;
+  document.getElementById("count").textContent =
+    "Осталось: " + left + " " + plural(left, ["задача", "задачи", "задач"]);
+  document.getElementById("sub").textContent =
+    tasks.length ? "Выполнено " + doneN + " из " + tasks.length : "Начните с первой задачи";
+  document.getElementById("clear").hidden = doneN === 0;
+
+  document.querySelectorAll(".filters button").forEach(b =>
+    b.setAttribute("aria-pressed", String(b.dataset.f === filter)));
+}
+
+document.getElementById("form").addEventListener("submit", e => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  tasks.unshift({ id: Date.now() + Math.random(), text, done: false });
+  input.value = "";
+  save(); render(); input.focus();
+});
+
+document.querySelectorAll(".filters button").forEach(b =>
+  b.addEventListener("click", () => { filter = b.dataset.f; render(); }));
+
+document.getElementById("clear").addEventListener("click", () => {
+  tasks = tasks.filter(t => !t.done);
+  save(); render();
+});
+
+render();
+</script>
+</body>
+</html>
